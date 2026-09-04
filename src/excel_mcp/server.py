@@ -85,14 +85,7 @@ def _resolved_path_is_within(base: str, candidate: str) -> bool:
 
 
 def get_excel_path(filename: str) -> str:
-    """Get full path to Excel file.
-
-    Args:
-        filename: Name of Excel file
-
-    Returns:
-        Full path to Excel file
-    """
+    """Get full path to Excel file. Auto-uploads local absolute paths."""
     if not filename or "\x00" in filename:
         raise ValueError(f"Invalid filename: {filename}")
 
@@ -101,8 +94,9 @@ def get_excel_path(filename: str) -> str:
             raise ValueError(f"Invalid filename: {filename}, must be an absolute path when not in SSE mode")
         return os.path.normpath(filename)
 
+    # Auto-upload: if an absolute path is given, copy the file into EXCEL_FILES_PATH
     if os.path.isabs(filename):
-        raise ValueError(f"Invalid filename: {filename}, must be relative to EXCEL_FILES_PATH")
+        filename = _auto_upload_excel(filename)
 
     base = os.path.realpath(EXCEL_FILES_PATH)
     candidate = os.path.realpath(os.path.join(base, filename))
@@ -111,6 +105,27 @@ def get_excel_path(filename: str) -> str:
         raise ValueError(f"Invalid filename: {filename}, path escapes EXCEL_FILES_PATH")
 
     return candidate
+
+
+def _auto_upload_excel(filepath: str) -> str:
+    """If filepath is a local absolute path that doesn't exist under EXCEL_FILES_PATH,
+    copy it there and return the relative filename. Otherwise return filepath unchanged."""
+    if not os.path.isabs(filepath):
+        return filepath  # already relative, nothing to do
+    if not os.path.exists(filepath):
+        raise ValueError(f"File not found: {filepath}")
+    safe_name = os.path.basename(filepath)
+    if not safe_name.endswith(".xlsx"):
+        safe_name += ".xlsx"
+    base = os.path.realpath(EXCEL_FILES_PATH) if EXCEL_FILES_PATH else os.path.realpath("./excel_files")
+    os.makedirs(base, exist_ok=True)
+    dest = os.path.join(base, safe_name)
+    with open(filepath, "rb") as f:
+        data = f.read()
+    with open(dest, "wb") as f:
+        f.write(data)
+    return safe_name
+
 
 @mcp.tool(
     annotations=ToolAnnotations(
@@ -242,21 +257,25 @@ def read_data_from_excel(
 ) -> str:
     """
     Read data from Excel worksheet with cell metadata including validation rules.
-    
+
+    IMPORTANT: This server runs in Docker and cannot access local Mac/Windows paths.
+    Before calling this tool with a local file, upload it first using `upload_xlsx`.
+    `upload_xlsx` returns the relative `filepath` (e.g. "myfile.xlsx") to use here.
+    Do NOT pass absolute local paths like /Users/... or C:\\Users\\...
+
     Args:
-        filepath: Path to Excel file
+        filepath: Relative filename (e.g. "myfile.xlsx") within EXCEL_FILES_PATH
         sheet_name: Name of worksheet
         start_cell: Starting cell (default A1)
         end_cell: Ending cell (optional, auto-expands if not provided)
         preview_only: Whether to return preview only
-    
-    Returns:  
+
+    Returns:
     JSON string containing structured cell data with validation metadata.
     Each cell includes: address, value, row, column, and validation info (if any).
     """
     try:
         full_path = get_excel_path(filepath)
-        from excel_mcp.data import read_excel_range_with_metadata
         result = read_excel_range_with_metadata(
             full_path, 
             sheet_name, 
@@ -520,7 +539,12 @@ def get_workbook_metadata(
     filepath: str,
     include_ranges: bool = False
 ) -> str:
-    """Get metadata about workbook including sheets, ranges, etc."""
+    """Get metadata about workbook including sheets, ranges, etc.
+
+    IMPORTANT: This server runs in Docker and cannot access local Mac/Windows paths.
+    Before calling this tool with a local file, upload it first using `upload_xlsx`.
+    `upload_xlsx` returns the relative `filepath` (e.g. "myfile.xlsx") to use here.
+    """
     try:
         full_path = get_excel_path(filepath)
         result = get_workbook_info(full_path, include_ranges=include_ranges)
@@ -901,6 +925,74 @@ async def list_excel_files(request: Request) -> Response:
         if f.endswith(".xlsx")
     ]
     return JSONResponse({"files": files})
+
+
+import httpx as _httpx
+
+@mcp.tool(
+    annotations=ToolAnnotations(
+        title="Upload XLSX",
+    ),
+)
+async def upload_xlsx(local_path: str, filename: Optional[str] = None) -> str:
+    """Upload a local Excel (.xlsx) file to the server so it can be used with other tools.
+
+    Use this tool BEFORE any tool that takes a filepath (read_data_from_excel,
+    get_workbook_metadata, write_data_to_excel, etc.) when the file lives on the
+    local machine (e.g. /Users/…/data.xlsx or C:\\Users\\…\\data.xlsx).
+    The server runs in Docker and cannot access local paths directly.
+
+    Args:
+        local_path: Absolute path to the .xlsx file on the local machine.
+        filename:   Optional name to store the file as on the server.
+                    Defaults to the original filename.
+
+    Returns:
+        The relative filename (e.g. "data.xlsx") to pass to other tools as filepath.
+    """
+    import json as _json
+
+    if not os.path.exists(local_path):
+        return f"Error: File not found: {local_path}"
+
+    upload_filename = filename or os.path.basename(local_path)
+    if not upload_filename.endswith(".xlsx"):
+        upload_filename += ".xlsx"
+
+    host = os.environ.get("MCP_HOST_PUBLIC", "localhost")
+    port = int(os.environ.get("FASTMCP_PORT", "8002"))
+    upload_url = f"http://{host}:{port}/upload"
+    api_key = os.environ.get("MCP_API_KEY", "")
+
+    headers = {}
+    if api_key:
+        headers["X-API-Key"] = api_key
+
+    try:
+        with open(local_path, "rb") as f:
+            file_data = f.read()
+
+        async with _httpx.AsyncClient() as client:
+            response = await client.post(
+                upload_url,
+                headers=headers,
+                files={"file": (upload_filename, file_data, "application/octet-stream")},
+                data={"filename": upload_filename},
+                timeout=60,
+            )
+
+        if response.status_code != 200:
+            return f"Error: Upload failed (HTTP {response.status_code}): {response.text}"
+
+        result = response.json()
+        relative_name = result.get("filename", upload_filename)
+        return _json.dumps({
+            "filepath": relative_name,
+            "size_bytes": result.get("size_bytes", len(file_data)),
+            "message": f"File uploaded. Use filepath='{relative_name}' with other Excel tools.",
+        })
+    except Exception as e:
+        return f"Error: Upload failed: {str(e)}"
 
 
 def run_sse():

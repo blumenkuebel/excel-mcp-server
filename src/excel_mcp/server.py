@@ -818,13 +818,23 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse, FileResponse, Response
 
 
+def _check_api_key(request: Request) -> bool:
+    """Return True if the request is authorized (or no key is configured)."""
+    required = os.environ.get("MCP_API_KEY", "")
+    if not required:
+        return True
+    return request.headers.get("X-API-Key", "") == required
+
+
 @mcp.custom_route("/upload", methods=["POST"])
 async def upload_excel(request: Request) -> Response:
     """Upload an Excel file via multipart/form-data.
 
-    Usage: curl -F "file=@myfile.xlsx" http://<host>:8002/upload
-    Returns JSON with filename, file_path, and size_bytes.
+    Usage: curl -H "X-API-Key: secret" -F "file=@myfile.xlsx" http://<host>:8002/upload
     """
+    if not _check_api_key(request):
+        return JSONResponse({"error": "Unauthorized"}, status_code=401)
+
     form = await request.form()
     file = form.get("file")
     if file is None:
@@ -855,8 +865,11 @@ async def upload_excel(request: Request) -> Response:
 async def download_excel(request: Request) -> Response:
     """Download an Excel file by filename.
 
-    Usage: curl http://<host>:8002/download/myfile.xlsx -o myfile.xlsx
+    Usage: curl -H "X-API-Key: secret" http://<host>:8002/download/myfile.xlsx -o myfile.xlsx
     """
+    if not _check_api_key(request):
+        return JSONResponse({"error": "Unauthorized"}, status_code=401)
+
     filename = request.path_params["filename"]
     safe_name = os.path.basename(filename)
     try:
@@ -877,6 +890,9 @@ async def download_excel(request: Request) -> Response:
 @mcp.custom_route("/files", methods=["GET"])
 async def list_excel_files(request: Request) -> Response:
     """List all Excel files available on the server."""
+    if not _check_api_key(request):
+        return JSONResponse({"error": "Unauthorized"}, status_code=401)
+
     base = os.path.realpath(EXCEL_FILES_PATH) if EXCEL_FILES_PATH else os.path.realpath("./excel_files")
     os.makedirs(base, exist_ok=True)
     files = [

@@ -11,6 +11,10 @@
 # EXCEL_FILES_PATH liegen und werden RELATIV dazu angesprochen
 # (z. B. "reports/q1.xlsx"). Absolute Pfade werden abgelehnt.
 #
+# Optionaler API-Key-Schutz für /upload, /download, /files:
+#   MCP_API_KEY=geheim ./start_server.sh
+#   curl -H "X-API-Key: geheim" -F "file=@data.xlsx" http://host:8002/upload
+#
 set -euo pipefail
 
 # In das Verzeichnis dieses Skripts wechseln

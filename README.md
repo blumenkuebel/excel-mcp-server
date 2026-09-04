@@ -26,9 +26,14 @@ All `.xlsx` files must be placed under `EXCEL_FILES_PATH` (default: `excel-mcp-s
 
 ## File Transfer
 
+The server runs in Docker and **cannot access local file paths** (e.g. `/Users/…`). XLSX files must be uploaded via HTTP before they can be used with MCP tools.
+
+Files are stored in `/app/excel_files` inside the container (mapped to `/mnt/dockershare/excel`).
+
 ```bash
-# Upload
-curl -H "X-API-Key: $KEY" -F "file=@data.xlsx" http://192.168.55.15:8002/upload
+# Upload (required before any tool that takes a filepath)
+curl -s -H "X-API-Key: $KEY" -F "file=@data.xlsx" http://192.168.55.15:8002/upload
+# → returns JSON with "filename": "data.xlsx"
 
 # Download
 curl -H "X-API-Key: $KEY" http://192.168.55.15:8002/download/data.xlsx -o data.xlsx
@@ -36,6 +41,12 @@ curl -H "X-API-Key: $KEY" http://192.168.55.15:8002/download/data.xlsx -o data.x
 # List files
 curl -H "X-API-Key: $KEY" http://192.168.55.15:8002/files
 ```
+
+### Workflow for agents
+
+1. Upload the local file via `curl -s -H "X-API-Key: ..." -F "file=@/path/to/file.xlsx" http://192.168.55.15:8002/upload`
+2. Use the returned `filename` (e.g. `"data.xlsx"`) as `filepath` with all Excel tools
+3. Do NOT try to read or unzip XLSX files locally — always upload via curl first
 
 ## API Key
 

@@ -13,16 +13,11 @@ All credit for the core implementation goes to the original author.
 
 ### Added
 
-#### File upload/download tools (`src/excel_mcp/server.py`)
-Two new MCP tools to transfer Excel files between client and server without requiring
-shared filesystem access:
+#### File upload/download HTTP endpoints (`src/excel_mcp/server.py`)
+Three custom HTTP routes for transferring Excel files without shared filesystem access:
 
-- **`upload_excel(filename, content_base64)`** – saves a base64-encoded `.xlsx` file
-  into `EXCEL_FILES_PATH` on the server; the file can then be used by all other tools
-  via its filename.
-- **`download_excel(filename)`** – reads an Excel file from `EXCEL_FILES_PATH` and
-  returns it as a JSON string with `filename`, `content_base64`, and `size_bytes`,
-  so the client can save it locally.
+- **`POST /upload`** – multipart/form-data upload (`curl -F "file=@data.xlsx" http://host:8002/upload`)
+- **`GET  /download/<filename>`** – streams the file back as octet-stream
+- **`GET  /files`** – lists all available XLSX files on the server
 
-This mirrors the deployment topology: the server runs in Docker and the client
-(Claude) has no direct access to the server's filesystem.
+The uploaded filename can be passed directly to all other Excel MCP tools.

@@ -1,6 +1,5 @@
 import logging
 import os
-import base64
 from typing import Any, List, Dict, Optional
 
 from mcp.server.fastmcp import FastMCP
@@ -815,58 +814,77 @@ def delete_sheet_columns(
         raise
 
 
-@mcp.tool()
-def upload_excel(filename: str, content_base64: str) -> str:
-    """Upload an Excel file to the server by providing its base64-encoded content.
+from starlette.requests import Request
+from starlette.responses import JSONResponse, FileResponse, Response
 
-    Use this to transfer a file from the client to the server before working with it.
-    The file is saved in the server's files directory and can then be used with all
-    other tools via its filename (e.g. 'myfile.xlsx').
+
+@mcp.custom_route("/upload", methods=["POST"])
+async def upload_excel(request: Request) -> Response:
+    """Upload an Excel file via multipart/form-data.
+
+    Usage: curl -F "file=@myfile.xlsx" http://<host>:8002/upload
+    Returns JSON with filename, file_path, and size_bytes.
     """
-    if not filename.endswith(".xlsx"):
-        filename += ".xlsx"
-    safe_name = os.path.basename(filename)
+    form = await request.form()
+    file = form.get("file")
+    if file is None:
+        return JSONResponse({"error": "Missing 'file' field"}, status_code=400)
+
+    filename = form.get("filename") or file.filename or "upload.xlsx"
+    if not str(filename).endswith(".xlsx"):
+        filename = str(filename) + ".xlsx"
+    safe_name = os.path.basename(str(filename))
 
     base = os.path.realpath(EXCEL_FILES_PATH) if EXCEL_FILES_PATH else os.path.realpath("./excel_files")
     os.makedirs(base, exist_ok=True)
     dest = os.path.join(base, safe_name)
 
-    try:
-        data = base64.b64decode(content_base64)
-    except Exception as e:
-        return f"Error: Invalid base64 content: {e}"
-
+    data = await file.read()
     with open(dest, "wb") as f:
         f.write(data)
 
-    return f"File '{safe_name}' uploaded successfully ({len(data)} bytes)."
-
-
-@mcp.tool()
-def download_excel(filename: str) -> str:
-    """Download an Excel file from the server as base64-encoded content.
-
-    Use this to retrieve a file after creating or modifying a workbook,
-    so the client can save it locally. Pass just the filename (e.g. 'myfile.xlsx').
-    Returns a JSON string with 'filename', 'content_base64', and 'size_bytes'.
-    """
-    import json
-    try:
-        full_path = get_excel_path(filename)
-    except ValueError as e:
-        return f"Error: {e}"
-
-    if not os.path.exists(full_path):
-        return f"Error: File not found: {filename}"
-
-    with open(full_path, "rb") as f:
-        data = f.read()
-
-    return json.dumps({
-        "filename": os.path.basename(full_path),
-        "content_base64": base64.b64encode(data).decode("utf-8"),
+    return JSONResponse({
+        "message": "File uploaded successfully.",
+        "filename": safe_name,
+        "file_path": dest,
         "size_bytes": len(data),
     })
+
+
+@mcp.custom_route("/download/{filename}", methods=["GET"])
+async def download_excel(request: Request) -> Response:
+    """Download an Excel file by filename.
+
+    Usage: curl http://<host>:8002/download/myfile.xlsx -o myfile.xlsx
+    """
+    filename = request.path_params["filename"]
+    safe_name = os.path.basename(filename)
+    try:
+        full_path = get_excel_path(safe_name)
+    except ValueError as e:
+        return JSONResponse({"error": str(e)}, status_code=400)
+
+    if not os.path.exists(full_path):
+        return JSONResponse({"error": f"File not found: {safe_name}"}, status_code=404)
+
+    return FileResponse(
+        full_path,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        filename=safe_name,
+    )
+
+
+@mcp.custom_route("/files", methods=["GET"])
+async def list_excel_files(request: Request) -> Response:
+    """List all Excel files available on the server."""
+    base = os.path.realpath(EXCEL_FILES_PATH) if EXCEL_FILES_PATH else os.path.realpath("./excel_files")
+    os.makedirs(base, exist_ok=True)
+    files = [
+        {"filename": f, "size_bytes": os.path.getsize(os.path.join(base, f))}
+        for f in sorted(os.listdir(base))
+        if f.endswith(".xlsx")
+    ]
+    return JSONResponse({"files": files})
 
 
 def run_sse():

@@ -1,0 +1,23 @@
+FROM python:3.10-slim
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc \
+    libffi-dev \
+  && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+COPY pyproject.toml README.md ./
+COPY src/ src/
+
+RUN pip install --no-cache-dir .
+
+RUN mkdir -p /app/excel_files
+
+ENV EXCEL_FILES_PATH=/app/excel_files
+ENV FASTMCP_HOST=0.0.0.0
+ENV FASTMCP_PORT=8002
+
+EXPOSE 8002
+
+CMD ["excel-mcp-server", "streamable-http"]

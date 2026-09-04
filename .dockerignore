@@ -1,0 +1,16 @@
+.venv
+__pycache__
+*.pyc
+*.pyo
+.git
+excel_files
+tests
+docs
+assets
+*.log
+*.mcpb
+Dockerfile
+start_server.sh
+uv.lock
+icon.png
+manifest.json

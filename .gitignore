@@ -1,0 +1,7 @@
+.venv/
+dist/
+excel_files/
+__pycache__/
+.notes/
+*.log
+.DS_Store

@@ -10,11 +10,17 @@ Based on [excel-mcp-server](https://github.com/haris-musa/excel-mcp-server) by *
 
 The script creates a `.venv`, installs the package via `pip install -e .`, and starts the server on port **8002**.
 
+## Deployment to Docker host
+
+```bash
+./deploy_to_remote.sh user
+```
+
 ## MCP Registration
 
 ```bash
 # Docker / remote
-claude mcp add --scope user --transport http excel http://192.168.55.15:8002/mcp
+claude mcp add --scope user --transport http excel http://<docker-host>:8002/mcp
 
 # Local
 claude mcp add --scope user --transport http excel http://127.0.0.1:8002/mcp
@@ -32,19 +38,19 @@ Files are stored in `/app/excel_files` inside the container (mapped to `/mnt/doc
 
 ```bash
 # Upload (required before any tool that takes a filepath)
-curl -s -H "X-API-Key: $KEY" -F "file=@data.xlsx" http://192.168.55.15:8002/upload
+curl -s -H "X-API-Key: $MCP_API_KEY" -F "file=@data.xlsx" http://<docker-host>:8002/upload
 # → returns JSON with "filename": "data.xlsx"
 
 # Download
-curl -H "X-API-Key: $KEY" http://192.168.55.15:8002/download/data.xlsx -o data.xlsx
+curl -H "X-API-Key: $MCP_API_KEY" http://<docker-host>:8002/download/data.xlsx -o data.xlsx
 
 # List files
-curl -H "X-API-Key: $KEY" http://192.168.55.15:8002/files
+curl -H "X-API-Key: $MCP_API_KEY" http://<docker-host>:8002/files
 ```
 
 ### Workflow for agents
 
-1. Upload the local file via `curl -s -H "X-API-Key: ..." -F "file=@/path/to/file.xlsx" http://192.168.55.15:8002/upload`
+1. Upload the local file via `curl -s -H "X-API-Key: $MCP_API_KEY" -F "file=@/path/to/file.xlsx" http://<docker-host>:8002/upload`
 2. Use the returned `filename` (e.g. `"data.xlsx"`) as `filepath` with all Excel tools
 3. Do NOT try to read or unzip XLSX files locally — always upload via curl first
 

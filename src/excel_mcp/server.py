@@ -917,6 +917,47 @@ async def list_excel_files(request: Request) -> Response:
     return JSONResponse({"files": files})
 
 
+@mcp.custom_route("/files/{filename}", methods=["DELETE"])
+async def delete_excel_file(request: Request) -> Response:
+    """Delete a single Excel file by name.
+
+    Usage: curl -X DELETE -H "X-API-Key: secret" http://<host>:8002/files/myfile.xlsx
+    """
+    if not _check_api_key(request):
+        return JSONResponse({"error": "Unauthorized"}, status_code=401)
+
+    safe_name = os.path.basename(request.path_params["filename"])
+    try:
+        full_path = get_excel_path(safe_name)
+    except ValueError as e:
+        return JSONResponse({"error": str(e)}, status_code=400)
+
+    if not os.path.exists(full_path):
+        return JSONResponse({"error": f"File not found: {safe_name}"}, status_code=404)
+
+    os.remove(full_path)
+    return JSONResponse({"message": f"Deleted {safe_name}"})
+
+
+@mcp.custom_route("/files", methods=["DELETE"])
+async def delete_all_excel_files(request: Request) -> Response:
+    """Delete all Excel files on the server.
+
+    Usage: curl -X DELETE -H "X-API-Key: secret" http://<host>:8002/files
+    """
+    if not _check_api_key(request):
+        return JSONResponse({"error": "Unauthorized"}, status_code=401)
+
+    base = os.path.realpath(EXCEL_FILES_PATH) if EXCEL_FILES_PATH else os.path.realpath("./excel_files")
+    os.makedirs(base, exist_ok=True)
+    deleted = []
+    for f in os.listdir(base):
+        if f.endswith(".xlsx"):
+            os.remove(os.path.join(base, f))
+            deleted.append(f)
+    return JSONResponse({"message": f"Deleted {len(deleted)} file(s)", "deleted": deleted})
+
+
 def run_sse():
     """Run Excel MCP server in SSE mode."""
     # Assign value to EXCEL_FILES_PATH in SSE mode

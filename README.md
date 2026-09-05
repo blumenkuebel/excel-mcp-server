@@ -8,13 +8,15 @@ Based on [excel-mcp-server](https://github.com/haris-musa/excel-mcp-server) by *
 ./start_server.sh
 ```
 
-The script creates a `.venv`, installs the package via `pip install -e .`, and starts the server on port **8002**.
+Creates a `.venv`, installs the package via `pip install -e .`, and starts the server on port **8002** via streamable HTTP.
 
 ## Deployment to Docker host
 
 ```bash
 ./deploy_to_remote.sh user
 ```
+
+Syncs the server via `rsync` to the Docker host and builds/starts the container via `docker compose`.
 
 ## MCP Registration
 
@@ -26,15 +28,11 @@ claude mcp add --scope user --transport http excel http://<docker-host>:8002/mcp
 claude mcp add --scope user --transport http excel http://127.0.0.1:8002/mcp
 ```
 
-## File Paths
-
-All `.xlsx` files must be placed under `EXCEL_FILES_PATH` (default: `excel-mcp-server/excel_files/` on the host, `/app/excel_files` in the container). Pass **relative** paths to all tools (e.g. `reports/q1.xlsx`). Absolute paths and directory traversal are rejected.
-
 ## File Transfer
 
-The server runs in Docker and **cannot access local file paths** (e.g. `/Users/…`). XLSX files must be uploaded via HTTP before they can be used with MCP tools.
+The server runs in Docker and **cannot access local file paths** (e.g. `/Users/…`). Files must be uploaded via HTTP before they can be used with MCP tools.
 
-Files are stored in `/app/excel_files` inside the container (mapped to `/mnt/dockershare/excel`).
+Files are stored in `/app/excel_files` inside the container (mapped to `/mnt/dockershare/excel`). All tools expect a **relative** filename (e.g. `data.xlsx`) — absolute paths and directory traversal are rejected.
 
 ```bash
 # Upload (required before any tool that takes a filepath)
@@ -46,6 +44,12 @@ curl -H "X-API-Key: $MCP_API_KEY" http://<docker-host>:8002/download/data.xlsx -
 
 # List files
 curl -H "X-API-Key: $MCP_API_KEY" http://<docker-host>:8002/files
+
+# Delete single file
+curl -X DELETE -H "X-API-Key: $MCP_API_KEY" http://<docker-host>:8002/files/data.xlsx
+
+# Delete all files
+curl -X DELETE -H "X-API-Key: $MCP_API_KEY" http://<docker-host>:8002/files
 ```
 
 ### Workflow for agents
@@ -58,7 +62,7 @@ curl -H "X-API-Key: $MCP_API_KEY" http://<docker-host>:8002/files
 
 Set `MCP_API_KEY` in the container environment to require `X-API-Key` on all `/upload`, `/download`, and `/files` requests. If unset, endpoints are unprotected.
 
-See `docker-compose.yml` for the placeholder and `CHANGELOG.md` for security notes.
+See `docker-compose.yml` for the placeholder.
 
 ## License
 
